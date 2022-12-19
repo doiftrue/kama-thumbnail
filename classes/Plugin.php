@@ -1,32 +1,27 @@
 <?php
 
+namespace Kama_Thumbnail;
+
 /**
  * Class Kama_Thumbnail.
  *
  * @see kama_thumbnail()
  */
-class Kama_Thumbnail {
+class Plugin {
 
 	/**
 	 * Plugin options.
 	 *
-	 * @var Kama_Thumbnail_Options
+	 * @var Options
 	 */
 	public static $opt;
 
 	/**
 	 * Clear Cache.
 	 *
-	 * @var Kama_Thumbnail_Cache
+	 * @var Cache
 	 */
 	public static $cache;
-
-	/**
-	 * Integration with WP.
-	 *
-	 * @var Kama_Thumbnail_Integration
-	 */
-	public static $integ;
 
 
 	/**
@@ -41,23 +36,18 @@ class Kama_Thumbnail {
 
 	private function __construct(){
 
-		self::$opt = new Kama_Thumbnail_Options();
+		// first of all
+		self::$opt = new Options();
 		self::$opt->init();
 
-		self::$cache = new Kama_Thumbnail_Cache();
-		self::$cache->init();
+		self::$cache = new Cache();
 
-		self::$integ = new Kama_Thumbnail_Integration();
-		self::$integ->init();
-
-		if( is_admin() ){
-			( new Kama_Thumbnail_Options_Page() )->init();
-		}
+		WP_Integration::init();
 
 		/**
 		 * Allow to do something when Kama_Thumbnail initialized.
 		 *
-		 * @param Kama_Thumbnail_Options $options
+		 * @param \Kama_Thumbnail\Options $options
 		 */
 		do_action( 'kama_thumb_inited', self::$opt );
 	}

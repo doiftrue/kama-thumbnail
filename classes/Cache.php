@@ -1,37 +1,11 @@
 <?php
 
+namespace Kama_Thumbnail;
+
 /**
  * @see kthumb_cache()
  */
-class Kama_Thumbnail_Cache {
-
-	public function init(): void {
-
-		if( is_admin() ){
-
-			add_filter( 'save_post', [ $this, 'clear_post_meta' ] );
-		}
-	}
-
-	/**
-	 * Clears custom field with a link when you update the post,
-	 * to create it again. Only if the meta-field of the post exists.
-	 *
-	 * @param int $post_id
-	 */
-	public function clear_post_meta( int $post_id ): void {
-		global $wpdb;
-
-		$meta_key = kthumb_opt()->meta_key;
-
-		$row = $wpdb->get_row( $wpdb->prepare(
-			"SELECT * FROM $wpdb->postmeta WHERE post_id = %d AND meta_key = %s", $post_id, $meta_key
-		) );
-
-		if( $row ){
-			update_post_meta( $post_id, $meta_key, '' );
-		}
-	}
+class Cache {
 
 	/**
 	 * Cache cleanup with expire verification.
@@ -74,7 +48,7 @@ class Kama_Thumbnail_Cache {
 
 		switch( $type ){
 			case 'rm_stub_thumbs':
-				$this->clear_thumb_cache('only_stub');
+				$this->clear_thumb_cache( 'only_stub' );
 				break;
 			case 'rm_thumbs':
 				$this->clear_thumb_cache();
@@ -103,23 +77,25 @@ class Kama_Thumbnail_Cache {
 		}
 
 		if( ! $url ){
-			Kama_Thumbnail_Helpers::show_error( __( 'No IMG URL was specified.', 'kama-thumbnail' ) );
+			Helpers::show_error( __( 'No IMG URL was specified.', 'kama-thumbnail' ) );
 			return false;
 		}
+
+		$this->clear_thumb_cache( 'only_stub' );
 
 		$url = esc_url_raw( $url );
 
 		$glob_pattern = $this->glob_pattern( $url );
 
 		if( ! $glob_pattern ){
-			Kama_Thumbnail_Helpers::show_error( 'Something wrong in code - $glob_pattern not determined.' );
+			Helpers::show_error( 'Something wrong in code - $glob_pattern not determined.' );
 			return false;
 		}
 
 		$glob = glob( $glob_pattern );
 
 		if( ! $glob ){
-			Kama_Thumbnail_Helpers::show_message( __( 'Nothing to clear.', 'kama-thumbnail' ) );
+			Helpers::show_info( __( 'Nothing to clear.', 'kama-thumbnail' ) );
 			return false;
 		}
 
@@ -130,7 +106,7 @@ class Kama_Thumbnail_Cache {
 		$deleted_files_num = count( $glob );
 
 		$msg = sprintf( __( '%d cache files deleted.', 'kama-thumbnail' ), $deleted_files_num );
-		Kama_Thumbnail_Helpers::show_message( $msg );
+		Helpers::show_message( $msg );
 
 		return $deleted_files_num;
 	}
@@ -155,11 +131,11 @@ class Kama_Thumbnail_Cache {
 		// original URL passed
 		else {
 
-			$thumb = new Kama_Make_Thumb( '', $url );
+			$thumb = new Make_Thumb( '', $url );
 
 			// SVG or something wrong with URL.
 			if( ! $thumb->thumb_url ){
-				Kama_Thumbnail_Helpers::show_message( __( 'SVG or something wrong with URL.', 'kama-thumbnail' ) );
+				Helpers::show_message( __( 'SVG or something wrong with URL.', 'kama-thumbnail' ) );
 				return false;
 			}
 
@@ -176,11 +152,11 @@ class Kama_Thumbnail_Cache {
 		$thumb_url_right_part = explode( $cache_dir_url_path, $thumb_url )[1];
 
 		// create fake data to determine hash length for use in regex
-		$thumb = new Kama_Make_Thumb( '', '/foo/bar.jpg' );
+		$thumb = new Make_Thumb( '', '/foo/bar.jpg' );
 		$hash_length = strlen( $thumb->metadata->file_name_data->hash );
 
 		if( ! $hash_length ){
-			Kama_Thumbnail_Helpers::show_error( 'Something wrong in code - $hash_length not determined.' );
+			Helpers::show_error( 'Something wrong in code - $hash_length not determined.' );
 			return '';
 		}
 
@@ -189,13 +165,13 @@ class Kama_Thumbnail_Cache {
 		/**
 		 * Allows to change regular expression to find cached files for deletion.
 		 *
-		 * @param string          $regex
-		 * @param Kama_Make_Thumb $thumb
+		 * @param string                     $regex
+		 * @param \Kama_Thumbnail\Make_Thumb $thumb
 		 */
 		$regex = apply_filters( 'kama_thumb__clear_img_cache_glob_pattern_regex', $regex, $thumb );
 
 		if( ! preg_match( $regex, $thumb_url_right_part, $mm ) ){
-			Kama_Thumbnail_Helpers::show_error( 'Something wrong in code - hash part not found in cache IMG URL.' );
+			Helpers::show_error( 'Something wrong in code - hash part not found in cache IMG URL.' );
 			return '';
 		}
 
@@ -210,31 +186,60 @@ class Kama_Thumbnail_Cache {
 		$cache_dir = kthumb_opt()->cache_dir;
 
 		if( ! $cache_dir ){
-			Kama_Thumbnail_Helpers::show_error( __( 'ERROR: Path to cache not set.', 'kama-thumbnail' ) );
+			Helpers::show_error( __( 'ERROR: Path to cache not set.', 'kama-thumbnail' ) );
 
 			return false;
 		}
 
-		if( is_dir( $cache_dir ) ){
+		if( ! is_dir( $cache_dir ) ){
+			Helpers::show_error( 'ERROR: specified cache dir is not a directory.' );
 
-			// delete stub only
-			if( $only_stub ){
-				foreach( glob( "$cache_dir/stub_*" ) as $file ){
-					unlink( $file );
-				}
+			return false;
+		}
 
-				if( defined( 'WP_CLI' ) || WP_DEBUG ){
-					$msg = __( 'All nophoto thumbs was deleted from <b>Kama Thumbnail</b> cache.', 'kama-thumbnail' );
-					Kama_Thumbnail_Helpers::show_info( $msg );
-				}
+		$res = $this->check_cache_dir_path( $cache_dir );
+		if( is_wp_error( $res ) ){
+			Helpers::show_error( $res->get_error_message() );
+		}
+
+		// delete stub only
+		if( $only_stub ){
+			$stubs = glob( "$cache_dir/stub_*" );
+			foreach( $stubs as $file ){
+				unlink( $file );
 			}
-			// delete all
-			else{
-				self::clear_folder( $cache_dir );
 
-				$msg = __( '<b>Kama Thumbnail</b> cache has been cleared.', 'kama-thumbnail' );
-				Kama_Thumbnail_Helpers::show_message( $msg );
-			}
+			$msg = sprintf( __( '%d stubs files was deleted from Kama Thumbnail cache.', 'kama-thumbnail' ), count( $stubs ) );
+			Helpers::show_info( $msg );
+		}
+		// delete all
+		else {
+			self::clear_folder( $cache_dir );
+
+			$msg = __( 'Kama Thumbnail cache has been cleared.', 'kama-thumbnail' );
+			Helpers::show_message( $msg );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Cache path must be deeper than 4 dirs from root &
+	 * must contain one of substrings: `cache` or `thumb`.
+	 *
+	 * This restriction is needed to not delete files from not cache folder.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public function check_cache_dir_path( string $cache_dir ){
+
+		if( explode( '/', $cache_dir ) < 4 ){
+			return new \WP_Error( 'err', 'Cache dir not deep anough.' );
+		}
+
+		if(	! preg_match( '/cache|thumb/', $cache_dir ) ){
+			$msg = sprintf( 'ERROR: Cache dir must contain `cache` or `thumb` substring: %s.', $cache_dir );
+			return new \WP_Error( 'err', $msg );
 		}
 
 		return true;
@@ -247,7 +252,7 @@ class Kama_Thumbnail_Cache {
 		global $wpdb;
 
 		if( ! kthumb_opt()->meta_key ){
-			Kama_Thumbnail_Helpers::show_error( 'meta_key option not set.' );
+			Helpers::show_error( 'meta_key option not set.' );
 
 			return;
 		}
@@ -272,12 +277,12 @@ class Kama_Thumbnail_Cache {
 		}
 
 		if( $deleted ){
-			Kama_Thumbnail_Helpers::show_message(
+			Helpers::show_message(
 				sprintf( __( 'All custom fields <code>%s</code> was deleted.', 'kama-thumbnail' ), kthumb_opt()->meta_key )
 			);
 		}
 		else{
-			Kama_Thumbnail_Helpers::show_message(
+			Helpers::show_message(
 				sprintf( __( 'Couldn\'t delete <code>%s</code> custom fields', 'kama-thumbnail' ), kthumb_opt()->meta_key )
 			);
 		}
@@ -287,6 +292,8 @@ class Kama_Thumbnail_Cache {
 
 	/**
 	 * Deletes all files and folders in the specified directory.
+	 *
+	 * !IMPORTANT! Before call this function ensure that you clear right folder, or you can lose your files!
 	 *
 	 * @param string $folder_path  The path to the folder you want to clear.
 	 * @param bool   $del_current  Is delete $folder_path itself?
@@ -298,7 +305,7 @@ class Kama_Thumbnail_Cache {
 		foreach( glob( "$folder_path/*" ) as $file ){
 
 			if( is_dir( $file ) ){
-				call_user_func( __METHOD__, $file, true );
+				call_user_func( __METHOD__, $file, true ); // recursion
 			}
 			else{
 				unlink( $file );

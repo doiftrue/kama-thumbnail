@@ -3,7 +3,9 @@
  * @noinspection PhpUndefinedClassInspection
  */
 
-class Kama_Thumbnail_CLI_Command extends WP_CLI_Command {
+namespace Kama_Thumbnail;
+
+class CLI_Command extends \WP_CLI_Command {
 
 	/**
 	 * Working with cache and removable data (post meta).

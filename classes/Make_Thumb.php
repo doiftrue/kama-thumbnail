@@ -1,13 +1,15 @@
 <?php
 
+namespace Kama_Thumbnail;
+
 /**
  * A class for creating a single thumbnail.
  */
 
-class Kama_Make_Thumb {
+class Make_Thumb {
 
-	use Kama_Make_Thumb__Helpers;
-	use Kama_Make_Thumb__Creators;
+	use Make_Thumb__Helpers;
+	use Make_Thumb__Creators;
 
 	/** @var string */
 	public $src;
@@ -106,12 +108,6 @@ class Kama_Make_Thumb {
 	 */
 	private static $_thumbs_created = 0;
 
-	/** @var int */
-	public static $CHMOD_DIR = 0755;
-
-	/** @var int */
-	public static $CHMOD_FILE = 0644;
-
 	/**
 	 * It is set in the settings of the admin panel.
 	 * Or in Options class.
@@ -130,9 +126,6 @@ class Kama_Make_Thumb {
 		$this->metadata = (object) $this->metadata; // convert to object
 
 		self::$last_instance = $this;
-
-		defined( 'FS_CHMOD_DIR' )  && self::$CHMOD_DIR = FS_CHMOD_DIR;
-		defined( 'FS_CHMOD_FILE' ) && self::$CHMOD_FILE = FS_CHMOD_FILE;
 
 		self::$debug = kthumb_opt()->debug;
 
@@ -173,8 +166,8 @@ class Kama_Make_Thumb {
 	 *     @type string         $allow        Allowed hosts for this query (separated by spaces or commas).
 	 *                                        Expands the global option `allow_hosts`.
 	 *     @type int            $quality      The quality of the created thumbnail. Default: `quality` option.
-	 *     @type int|WP_Post    $post_id      The ID or object of the post to work with.
-	 *     @type int|WP_Post    $post         $post_id alias.
+	 *     @type int|\WP_Post   $post_id      The ID or object of the post to work with.
+	 *     @type int|\WP_Post   $post         $post_id alias.
 	 *     @type bool           $no_stub      Do not show a stub if there is one. Default: `no_stub` option.
 	 *                                        If you specify `false/0`, the plugin option will be ignored and the stub will be shown!
 	 *     @type bool           $yes_stub     Deprecated from v 3.3.8. Use `no_stub = 0` instead.
@@ -213,7 +206,7 @@ class Kama_Make_Thumb {
 			'width'        => 0,
 			'height'       => 0,
 			'wh'           => '',
-			'attach_id'    => is_numeric( $src ) ? (int) $src : 0,
+			'attach_id'    => 0,
 			'src'          => $src,
 			'quality'      => kthumb_opt()->quality,
 			'post_id'      => '',
@@ -239,6 +232,7 @@ class Kama_Make_Thumb {
 			'target'   => '', // extra
 			'download' => '', // extra
 
+			// other
 			'force_lib'    => '',
 		];
 
@@ -250,18 +244,32 @@ class Kama_Make_Thumb {
 		$rg = array_merge( apply_filters( 'kama_thumb_default_args', $default_args ), $rg );
 
 		// trim strings
-		foreach( $rg as & $val ){
-			is_string( $val ) && $val = trim( $val );
+		foreach( $rg as $index => $val ){
+			is_string( $val ) && ( $rg[ $index ] = trim( $val ) );
 		}
-		unset( $val );
+
+		$this->parse_args__aliases( $rg );
+		$this->parse_args__src( $rg );
+
+		$this->set_class_props( $rg );
+
+		/**
+		 * Allows to change arguments after it has been parsed.
+		 *
+		 * @param array                      $rg         Parsed args.
+		 * @param \Kama_Thumbnail\Make_Thumb $kama_thumb
+		 * @param array                      $args       Raw args passed to constructor.
+		 */
+		$this->args = apply_filters( 'kama_thumb__set_args', $rg, $this, $args );
+	}
+
+	private function parse_args__aliases( & $rg ): void {
 
 		// parse wh 50x50 | 50X50 | 50 50 | 50-50 etc...
 		if( $rg['wh'] ){
 			[ $rg['width'], $rg['height'] ] = preg_split( '/\D+/', $rg['wh'] ) + [ 0, 0 ];
 		}
-		unset( $rg['wh'] );
 
-		// aliases
 		isset( $rg['w'] )           && ( $rg['width']   = $rg['w'] );
 		isset( $rg['h'] )           && ( $rg['height']  = $rg['h'] );
 		isset( $rg['q'] )           && ( $rg['quality'] = $rg['q'] );
@@ -271,11 +279,55 @@ class Kama_Make_Thumb {
 		isset( $rg['link'] )        && ( $rg['src']     = $rg['link'] );
 		isset( $rg['img'] )         && ( $rg['src']     = $rg['img'] );
 
-		unset( $rg['w'], $rg['h'], $rg['q'], $rg['post'], $rg['url'], $rg['link'], $rg['img'] );
+		// unset aliases
+		foreach( [ 'wh', 'w', 'h', 'q', 'post', 'url', 'link', 'img' ] as $key ){
+			unset( $rg[ $key ] );
+		}
+	}
+
+	private function parse_args__src( & $rg ): void {
 
 		// attach_id
-		if( $rg['attach_id'] && $attach_url = wp_get_attachment_url( $rg['attach_id'] ) ){
-			$rg['src'] = $attach_url;
+		if( $rg['attach_id'] ){
+			$attach_url = wp_get_attachment_url( $rg['attach_id'] );
+
+			$rg['src'] = $attach_url ?: '';
+		}
+		// attach_id passed to $src
+		elseif( is_numeric( $rg['src'] ) && $rg['src'] ){
+			$attach_url = wp_get_attachment_url( $rg['src'] );
+
+			if( $attach_url ){
+				$rg['attach_id'] = $rg['src'];
+				$rg['src'] = $attach_url;
+			}
+			else {
+				$rg['src'] = '';
+			}
+		}
+
+		// Post object passed to $src
+		if( ! empty( $rg['src']->post_type ) && $rg['src'] instanceof \WP_Post ){
+
+			$the_post = $rg['src'];
+
+			// attachment object
+			if( 'attachment' === $the_post->post_type ){
+				$rg['attach_id'] = $the_post->ID;
+				$rg['src'] = wp_get_attachment_url( $the_post->ID );
+			}
+			// post object
+			else {
+				$thumb_id = get_post_thumbnail_id( $the_post );
+
+				if( $thumb_id ){
+					$rg['attach_id'] = $thumb_id;
+					$rg['src'] = wp_get_attachment_url( $thumb_id );
+				}
+				else {
+					$rg['src'] = '';
+				}
+			}
 		}
 
 		// when src = ''|null|false
@@ -291,16 +343,6 @@ class Kama_Make_Thumb {
 			$rg['src'] = '';
 		}
 
-		$this->set_class_props( $rg );
-
-		/**
-		 * Allows to change arguments after it has been parsed.
-		 *
-		 * @param array           $rg         Parsed args.
-		 * @param Kama_Make_Thumb $kama_thumb
-		 * @param array           $args       Raw args passed to constructor.
-		 */
-		$this->args = apply_filters( 'kama_thumb__set_args', $rg, $this, $args );
 	}
 
 	/**
@@ -309,7 +351,7 @@ class Kama_Make_Thumb {
 	private function set_class_props( array $rg ): void {
 
 		$this->src        = (string) $rg['src'];
-		$this->stub_url   = (string) $rg['stub_url'];
+		$this->stub_url   = self::insure_protocol_domain( $rg['stub_url'] );
 		$this->width      = (int)    $rg['width'];
 		$this->height     = (int)    $rg['height'];
 		$this->quality    = (int)    $rg['quality'];
@@ -344,7 +386,7 @@ class Kama_Make_Thumb {
 		$this->allow_hosts = kthumb_opt()->allow_hosts;
 		if( $rg['allow'] ){
 			foreach( wp_parse_list( $rg['allow'] ) as $host ){
-				$this->allow_hosts[] = ( $host === 'any' ) ? $host : Kama_Thumbnail_Helpers::parse_main_dom( $host );
+				$this->allow_hosts[] = ( $host === 'any' ) ? $host : Helpers::parse_main_dom( $host );
 			}
 		}
 	}
@@ -434,7 +476,7 @@ class Kama_Make_Thumb {
 			'width'       => $this->width ?: null,  // width & height at this moment is always accurate!
 			'height'      => $this->height ?: null, // width & height at this moment is always accurate!
 			'loading'     => $this->args['loading'] ?? 'lazy',
-			'decoding'    => $this->args['decoding'] ?? '', // auto, async, sync
+			'decoding'    => $this->args['decoding'] ?? 'async', // auto, async, sync
 			'class'       => $this->args['class'] ? preg_replace( '/[^A-Za-z0-9 _-]/', '', $this->args['class'] ) : '',
 			'title'       => $this->args['title'] ? esc_attr( $this->args['title'] ) : '',
 			'style'       => $this->args['style'] ? str_replace( '"', "'", strip_tags( $this->args['style'] ) ) : '',
@@ -447,11 +489,17 @@ class Kama_Make_Thumb {
 		/**
 		 * Allow change <img> tag all attributes before create the tag.
 		 *
-		 * @param array           $attrs `<img>` tag attributes.
-		 * @param array           $args  Initial data.
-		 * @param Kama_Make_Thumb $kama_thumb
+		 * @param array                      $attrs `<img>` tag attributes.
+		 * @param array                      $args  Initial data.
+		 * @param \Kama_Thumbnail\Make_Thumb $kama_thumb
 		 */
 		$attrs = apply_filters( 'kama_thumb__img_attrs', $attrs, $this->args, $this );
+
+		// move `src` value to `srcset` and place original URL to `src`.
+		if( ! $attrs['srcset'] ){
+			$attrs['srcset'] = $attrs['src'];
+			$attrs['src'] = $this->src; // original
+		}
 
 		$implode_attrs = [];
 		foreach( $attrs as $key => $val ){
@@ -513,9 +561,9 @@ class Kama_Make_Thumb {
 		/**
 		 * Allow change <a> tag all attributes before create the tag.
 		 *
-		 * @param array           $attrs `<a>` tag attributes.
-		 * @param array           $args  Initial data.
-		 * @param Kama_Make_Thumb $kama_thumb
+		 * @param array                      $attrs `<a>` tag attributes.
+		 * @param array                      $args  Initial data.
+		 * @param \Kama_Thumbnail\Make_Thumb $kama_thumb
 		 */
 		$attrs = apply_filters( 'kama_thumb__a_img_attrs', $attrs, $this->args, $this );
 
@@ -575,8 +623,8 @@ class Kama_Make_Thumb {
 		 * Allows you to handle thumbnail src and return it for do_thumbnail()
 		 * method. It allows to replace the method for your own logic.
 		 *
-		 * @param string          $src
-		 * @param Kama_Make_Thumb $kama_thumb
+		 * @param string                     $src
+		 * @param \Kama_Thumbnail\Make_Thumb $kama_thumb
 		 */
 		if( $src = apply_filters( 'pre_do_thumbnail_src', '', $this ) ){
 			return $src;
@@ -624,6 +672,8 @@ class Kama_Make_Thumb {
 		// NOTE: $this->src = urldecode( $this->src ); - not necessary, it will decode it automatically
 		$this->src = html_entity_decode( $this->src ); // 'sd&#96;asd.jpg' >>> 'sd`asd.jpg'
 
+		$this->src = self::insure_protocol_domain( $this->src );
+
 	}
 
 	protected function set_thumb_url_and_path(): void {
@@ -667,7 +717,7 @@ class Kama_Make_Thumb {
 			return null;
 		}
 
-		$data = new stdClass;
+		$data = new \stdClass();
 
 		$this->metadata->file_name_data = $data;
 
@@ -738,8 +788,8 @@ class Kama_Make_Thumb {
 		/**
 		 * Allows to set custom cached_thumb_url to not use cached URL of this plugin.
 		 *
-		 * @param string          $thumb_url
-		 * @param Kama_Make_Thumb $kama_thumb
+		 * @param string                     $thumb_url
+		 * @param \Kama_Thumbnail\Make_Thumb $kama_thumb
 		 */
 		$custom_thumb_url = apply_filters( 'cached_thumb_url', '', $this );
 
@@ -809,17 +859,18 @@ class Kama_Make_Thumb {
 				kthumb_opt()->cache_dir
 			);
 
-			Kama_Thumbnail_Helpers::show_error( $msg );
+			Helpers::show_error( $msg );
 
 			return;
 		}
 
 		if( ! $this->is_allowed_host( $this->src ) ){
-			$this->src = self::correct_protocol_domain( $this->stub_url );
+			$this->src = $this->stub_url;
+			$this->thumb_path = $this->change_to_stub( $this->thumb_path, 'path' );
+			$this->thumb_url = $this->change_to_stub( $this->thumb_url, 'url' );
+
 			$this->metadata->stub = 'stub: host not allowed';
 		}
-
-		$this->src = self::correct_protocol_domain( $this->src );
 
 		$img_string = $this->get_img_string();
 		$size = $img_string ? $this->image_size_from_string( $img_string ) : false;
@@ -830,7 +881,7 @@ class Kama_Make_Thumb {
 		// To create a correct thumbnail after the file appears, it is necessary to clear the image cache.
 		// Change the file name if it is a stub image
 		if( ! $size || empty( $size['mime'] ) || false === strpos( $size['mime'], 'image' ) ){
-			$this->src = self::correct_protocol_domain( $this->stub_url );
+			$this->src = $this->stub_url;
 			$this->thumb_path = $this->change_to_stub( $this->thumb_path, 'path' );
 			$this->thumb_url = $this->change_to_stub( $this->thumb_url, 'url' );
 
@@ -877,8 +928,8 @@ class Kama_Make_Thumb {
 		/**
 		 * Allows process created thumbnail, for example, to compress it.
 		 *
-		 * @param string          $thumb_path
-		 * @param Kama_Make_Thumb $kama_thumb
+		 * @param string                     $thumb_path
+		 * @param \Kama_Thumbnail\Make_Thumb $kama_thumb
 		 */
 		do_action( 'kama_thumb_created', $this->thumb_path, $this );
 
@@ -1067,7 +1118,7 @@ class Kama_Make_Thumb {
 	/**
 	 * Changes the passed thumbnail path/URL, making it the stub path.
 	 *
-	 * @param string $path_url  Path/URL to the thumbnail file.
+	 * @param string $path_url  Path/URL of the thumbnail file.
 	 * @param string $type      What was passed path or url?
 	 *
 	 * @return string New Path/URL.

@@ -1,23 +1,33 @@
 <?php
 
+namespace Kama_Thumbnail;
+
 /**
  * Integration class with WP (Front).
  */
-class Kama_Thumbnail_Integration {
+class WP_Integration {
 
-	public function init(): void {
+	public static function init(): void {
 
 		if( kthumb_opt()->use_in_content ){
-			add_filter( 'the_content',     [ $this, 'replece_in_content' ] );
-			add_filter( 'the_content_rss', [ $this, 'replece_in_content' ] );
+			add_filter( 'the_content',     [ __CLASS__, 'replece_in_content' ] );
+			add_filter( 'the_content_rss', [ __CLASS__, 'replece_in_content' ] );
 		}
+
+		if( is_admin() ){
+			add_filter( 'save_post', [ __CLASS__, 'clear_post_meta' ] );
+
+			( new Options_Page() )->init();
+		}
+
+		add_action( 'delete_attachment', [ __CLASS__, 'delete_attach_cached_files' ] );
 
 	}
 
 	/**
 	 * Find, create and replace thumbnails in the content of a post, by class in the IMG tag.
 	 */
-	public function replece_in_content( string $content ): string {
+	public static function replece_in_content( string $content ): string {
 
 		$match_class = ( kthumb_opt()->use_in_content === '1' ) ? 'mini' : kthumb_opt()->use_in_content;
 
@@ -43,10 +53,10 @@ class Kama_Thumbnail_Integration {
 		$img_ex = '<img([^>]*class=["\'][^\'"]*(?<=[\s\'"])'. $match_class .'(?=[\s\'"])[^\'"]*[\'"][^>]*)>';
 
 		// разделение ускоряет поиск почти в 10 раз
-		return preg_replace_callback( "~(<a[^>]+>\s*)$img_ex|$img_ex~", [ $this, '_replece_in_content_cb' ], $content );
+		return preg_replace_callback( "~(<a[^>]+>\s*)$img_ex|$img_ex~", [ __CLASS__, '_replece_in_content_cb' ], $content );
 	}
 
-	private function _replece_in_content_cb( $match ): string {
+	private static function _replece_in_content_cb( $match ): string {
 
 		$a_prefix = $match[1];
 		$is_a_img = ( strpos( $a_prefix, '<a' ) === 0 );
@@ -113,11 +123,41 @@ class Kama_Thumbnail_Integration {
 
 		$args = apply_filters( 'kama_thumb__replece_in_content_args', $args, $src, $match );
 
-		$Make_Thumb = new Kama_Make_Thumb( $args, $src );
+		$Make_Thumb = new Make_Thumb( $args, $src );
 
 		return $is_a_img
 			? $a_prefix . $Make_Thumb->img()
 			: $Make_Thumb->a_img();
+	}
+
+	/**
+	 * Clears custom field with a link when you update the post,
+	 * to create it again. Only if the meta-field of the post exists.
+	 *
+	 * @param int $post_id
+	 */
+	public static function clear_post_meta( int $post_id ): void {
+		global $wpdb;
+
+		$meta_key = kthumb_opt()->meta_key;
+
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM $wpdb->postmeta WHERE post_id = %d AND meta_key = %s", $post_id, $meta_key
+		) );
+
+		if( $row ){
+			update_post_meta( $post_id, $meta_key, '' );
+		}
+	}
+
+	/**
+	 * Deletes attachment relative thumbs files on attachment delete.
+	 */
+	public static function delete_attach_cached_files( int $attach_id ): void {
+
+		$url = wp_get_attachment_url( $attach_id );
+
+		kthumb_cache()->clear_img_cache( $url );
 	}
 
 }

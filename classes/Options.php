@@ -1,5 +1,7 @@
 <?php
 
+namespace Kama_Thumbnail;
+
 /**
  * @property-read string $meta_key
  * @property-read string $cache_dir
@@ -16,14 +18,16 @@
  * @property-read bool   $webp
  * @property-read bool   $main_host
  *
- * @property bool $debug
- *
  * @property-read string $opt_name
  * @property-read string $skip_setting_page
  *
+ * @property bool $debug
+ * @property int  $CHMOD_DIR
+ * @property int  $CHMOD_FILE
+ *
  * @see kthumb_opt()
  */
-class Kama_Thumbnail_Options {
+class Options {
 
 	/**
 	 * Plugin options.
@@ -97,17 +101,12 @@ class Kama_Thumbnail_Options {
 	 */
 	private static $allowed_hosts = [ 'youtube.com', 'youtu.be' ];
 
+	/** @var int */
+	public $CHMOD_DIR = 0755;
 
-	public function __set( $name, $val ){
+	/** @var int */
+	public $CHMOD_FILE = 0644;
 
-		if( in_array( $name, self::$setable_options_names, true ) ){
-			$this->opt->$name = $val;
-		}
-	}
-
-	public function __isset( $name ){
-		return null !== $this->__get( $name );
-	}
 
 	public function __get( $name ){
 
@@ -130,6 +129,17 @@ class Kama_Thumbnail_Options {
 		return null;
 	}
 
+	public function __set( $name, $val ){
+
+		if( in_array( $name, self::$setable_options_names, true ) ){
+			$this->opt->$name = $val;
+		}
+	}
+
+	public function __isset( $name ){
+		return null !== $this->__get( $name );
+	}
+
 	public function __construct(){
 
 		$this->set_options();
@@ -137,9 +147,13 @@ class Kama_Thumbnail_Options {
 
 	public function init(): void {
 
+		defined( 'FS_CHMOD_DIR' )  && $this->CHMOD_DIR  = FS_CHMOD_DIR;
+		defined( 'FS_CHMOD_FILE' ) && $this->CHMOD_FILE = FS_CHMOD_FILE;
+
 		$this->set_main_host();
 		$this->set_allow_hosts();
-		$this->fill_empty_options();
+		$this->set_no_photo_url();
+		$this->set_cache_dir();
 	}
 
 	private function set_options(): void {
@@ -165,36 +179,55 @@ class Kama_Thumbnail_Options {
 		}
 	}
 
+	private function set_no_photo_url(): void {
+
+		if( is_numeric( $this->opt->no_photo_url ) ){
+			$this->opt->no_photo_url = wp_get_attachment_url( $this->opt->no_photo_url );
+		}
+
+		if( ! $this->opt->no_photo_url ){
+			$this->opt->no_photo_url = KTHUMB_URL . '/no_photo.jpg';
+		}
+	}
+
 	/**
 	 * Fill options that saved as empty to use default.
 	 * Or options that need to be completed in runtime.
 	 *
 	 * @return void
 	 */
-	private function fill_empty_options(): void {
+	private function set_cache_dir(): void {
 
-		if( ! $this->opt->no_photo_url ){
-			$this->opt->no_photo_url = KTHUMB_URL . '/no_photo.jpg';
+		$dir = & $this->opt->cache_dir;
+		$dir_url = & $this->opt->cache_dir_url;
+
+		if( ! $dir ){
+			$dir = WP_CONTENT_DIR . '/cache/thumb';
 		}
 
-		if( ! $this->opt->cache_dir ){
-			$this->opt->cache_dir = untrailingslashit( str_replace( '\\', '/', WP_CONTENT_DIR . '/cache/thumb' ) );
+		if( ! $dir_url ){
+
+			// Relate URL to dir_path.
+			if( $dir && 0 === strpos( $dir, dirname( WP_CONTENT_DIR ) ) ){
+				$dir_url = str_replace( dirname( WP_CONTENT_DIR ), dirname( content_url() ), $dir );
+			}
+			else {
+				$dir_url = content_url() .'/cache/thumb';
+			}
 		}
 
-		if( ! $this->opt->cache_dir_url ){
-			$this->opt->cache_dir_url = untrailingslashit( content_url() .'/cache/thumb' );
-		}
-
+		$dir = untrailingslashit( str_replace( '\\', '/', $dir ) );
+		$dir_url = untrailingslashit( $dir_url );
 	}
 
 	private function set_main_host(): void {
 
-		self::$main_host = Kama_Thumbnail_Helpers::parse_main_dom( get_option( 'home' ) );
+		self::$main_host = Helpers::parse_main_dom( get_option( 'home' ) );
 
 		// re-set (for multisite)
 		if( is_multisite() ){
 			add_action( 'switch_blog', static function() {
-				self::$main_host = Kama_Thumbnail_Helpers::parse_main_dom( get_option( 'home' ) );
+				self::$main_host = Helpers::parse_main_dom( get_option( 'home' ) );
 			} );
 		}
 	}
@@ -260,7 +293,7 @@ class Kama_Thumbnail_Options {
 
 				foreach( $ah as & $host ){
 					$host = sanitize_text_field( $host );
-					$host = Kama_Thumbnail_Helpers::parse_main_dom( $host );
+					$host = Helpers::parse_main_dom( $host );
 				}
 				unset( $host );
 
@@ -270,13 +303,19 @@ class Kama_Thumbnail_Options {
 
 				$val = $defopt->meta_key;
 			}
+			elseif( $key === 'cache_dir' && $val ){
+				$res = kthumb_cache()->check_cache_dir_path( $val );
+				if( is_wp_error( $res ) ){
+					$val = '';
+				}
+			}
 			elseif( $key === 'stop_creation_sec' ){
 
 				$maxallowed = ini_get( 'max_execution_time' ) * 0.95; // -5%
 				$val = (float) $val;
 				$val = ( $val > $maxallowed || ! $val ) ? $maxallowed : $val;
 			}
-			else{
+			else {
 				$val = sanitize_text_field( $val );
 			}
 		}

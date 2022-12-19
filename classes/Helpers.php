@@ -1,6 +1,8 @@
 <?php
 
-class Kama_Thumbnail_Helpers {
+namespace Kama_Thumbnail;
+
+class Helpers {
 
 	/**
 	 * Get main domain name from URL or Subdomain:
@@ -19,7 +21,7 @@ class Kama_Thumbnail_Helpers {
 
 		// for http://localhost/foo  OR  IP
 		if( ! strpos( $host, '.' ) || filter_var( $host, FILTER_VALIDATE_IP ) ){
-			return $host;
+			return (string) $host;
 		}
 
 		$host = preg_replace( '/^www\./', '', $host );
@@ -64,7 +66,7 @@ class Kama_Thumbnail_Helpers {
 	public static function show_message( string $message = '', string $type = 'success' ): void {
 
 		if( defined( 'WP_CLI' ) ){
-			( 'error' === $type ) ? WP_CLI::error( $message ) : WP_CLI::success( $message );
+			( 'error' === $type ) ? \WP_CLI::error( $message ) : \WP_CLI::success( $message );
 		}
 		elseif( defined( 'DOING_AJAX' ) ){
 			add_action( 'kama_thumbnail_show_message', static function() use ( $message, $type ){

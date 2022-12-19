@@ -1,9 +1,11 @@
 <?php
 
+namespace Kama_Thumbnail;
+
 /**
  * TODO extract to separate class.
  */
-trait Kama_Make_Thumb__Creators {
+trait Make_Thumb__Creators {
 
 	/**
 	 * Core: Creates a thumbnail file based on the Imagick library
@@ -16,7 +18,7 @@ trait Kama_Make_Thumb__Creators {
 
 		try {
 
-			$image = new Imagick();
+			$image = new \Imagick();
 
 			$image->readImageBlob( $img_string );
 
@@ -28,7 +30,7 @@ trait Kama_Make_Thumb__Creators {
 			// set the quality
 			$format = $image->getImageFormat();
 			if( in_array( $format, [ 'JPEG', 'JPG' ] ) ){
-				$image->setImageCompression( Imagick::COMPRESSION_JPEG );
+				$image->setImageCompression( \Imagick::COMPRESSION_JPEG );
 			}
 			if( 'PNG' === $format ){
 				$image->setOption( 'png:compression-level', $this->quality );
@@ -59,9 +61,9 @@ trait Kama_Make_Thumb__Creators {
 			if( 'webp' === $this->force_format ){
 
 				if( 0 ){
-					$image->setBackgroundColor( new ImagickPixel('transparent') );
+					$image->setBackgroundColor( new \ImagickPixel('transparent') );
 					$image->setImageFormat('webp');
-					$image->setImageAlphaChannel( imagick::ALPHACHANNEL_ACTIVATE );
+					$image->setImageAlphaChannel( \Imagick::ALPHACHANNEL_ACTIVATE );
 					$image->writeImage( $this->thumb_path );
 				}
 				else{
@@ -77,13 +79,13 @@ trait Kama_Make_Thumb__Creators {
 				$this->metadata->thumb_format = $image->getImageFormat();
 			}
 
-			chmod( $this->thumb_path, self::$CHMOD_FILE );
+			chmod( $this->thumb_path, kthumb_opt()->CHMOD_FILE );
 			$image->clear();
 			$image->destroy();
 
 			return true;
 		}
-		catch( ImagickException $e ){
+		catch( \ImagickException $e ){
 
 			trigger_error( 'ImagickException: '. $e->getMessage() );
 
@@ -114,7 +116,7 @@ trait Kama_Make_Thumb__Creators {
 		// Create a resource
 		$image = @ imagecreatefromstring( $img_string );
 		/** @noinspection PhpElementIsNotAvailableInCurrentPhpVersionInspection */
-		$isok = ( PHP_VERSION_ID >= 80000 ) ? ( $image instanceof GDImage ) : is_resource( $image );
+		$isok = ( PHP_VERSION_ID >= 80000 ) ? ( $image instanceof \GDImage ) : is_resource( $image );
 		if( ! $isok ){
 			return false;
 		}
@@ -188,7 +190,7 @@ trait Kama_Make_Thumb__Creators {
 				$func_name( $thumb, $this->thumb_path, $this->quality );
 		}
 
-		chmod( $this->thumb_path, self::$CHMOD_FILE );
+		chmod( $this->thumb_path, kthumb_opt()->CHMOD_FILE );
 		imagedestroy( $image );
 		imagedestroy( $thumb );
 

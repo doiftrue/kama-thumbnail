@@ -1,19 +1,21 @@
 <?php
 
-trait Kama_Make_Thumb__Helpers {
+namespace Kama_Thumbnail;
+
+trait Make_Thumb__Helpers {
 
 	/**
-	 * Получает ссылку на картинку из произвольного поля текущего поста
-	 * или ищет ссылку в контенте поста и создает произвольное поле.
+	 * Retrieves a link to an image from a custom field of the current post
+	 * or searches for a link in the post content and creates a custom field.
 	 *
-	 * Если в тексте картинка не нашлась, то в произвольное поле запишется заглушка `no_photo`.
+	 * If no image is found in the content, the stub `no_photo` will be written to the custom field.
 	 *
 	 * @return string Image URL.
 	 *                `no_photo` - when all is ok, but src not found for post.
 	 *                `empty string` when error - post not detected.
 	 */
-	public function find_src_for_post(): string {
-		global $post, $wpdb;
+	protected function find_src_for_post(): string {
+		global $post;
 
 		$post_id = $this->post_id;
 
@@ -42,11 +44,9 @@ trait Kama_Make_Thumb__Helpers {
 
 		// Get the link from the content
 		if( ! $src ){
-			$post_content = $this->post_id
-				? $wpdb->get_var( "SELECT post_content FROM $wpdb->posts WHERE ID = " . (int) $this->post_id . " LIMIT 1" )
-				: $post->post_content;
+			$post_content = get_post( $this->post_id )->post_content ?? '';
 
-			$src = $this->get_src_from_text( $post_content );
+			$src = $post_content ? $this->get_src_from_text( $post_content ) : '';
 		}
 
 		// get the link from the attachments - the first image
@@ -124,9 +124,9 @@ trait Kama_Make_Thumb__Helpers {
 		/**
 		 * Allow to make the URL allowed for creating thumb.
 		 *
-		 * @param bool                   $allowed  Whether the url allowed. If `false` fallback to default check.
-		 * @param string                 $src      Image URL to create thumb from.
-		 * @param Kama_Thumbnail_Options $opt      Kama thumbnail options.
+		 * @param bool                    $allowed  Whether the url allowed. If `false` fallback to default check.
+		 * @param string                  $src      Image URL to create thumb from.
+		 * @param \Kama_Thumbnail\Options $opt      Kama thumbnail options.
 		 */
 		$allowed = apply_filters( 'kama_thumb__is_allowed_host', false, $src, kthumb_opt() );
 
@@ -135,13 +135,15 @@ trait Kama_Make_Thumb__Helpers {
 		}
 
 		if(
-			( '/' === $src[0] && '/' !== $src[1] ) || // relative url
+			// relative url
+			( '/' === $src[0] && '/' !== $src[1] )
+			||
 			in_array( 'any', $this->allow_hosts, true )
 		){
 			return true;
 		}
 
-		$host = Kama_Thumbnail_Helpers::parse_main_dom( $src );
+		$host = Helpers::parse_main_dom( $src );
 
 		return $host && in_array( $host, $this->allow_hosts, true );
 	}
@@ -149,7 +151,7 @@ trait Kama_Make_Thumb__Helpers {
 	/**
 	 * Corrects the specified URL: adds protocol OR domain it needed (for relative links).
 	 */
-	protected static function correct_protocol_domain( string $src ): string {
+	protected static function insure_protocol_domain( string $src ): string {
 
 		// URL without protocol: //site.ru/foo
 		if( 0 === strpos( $src, '//' ) ){
@@ -174,7 +176,7 @@ trait Kama_Make_Thumb__Helpers {
 			return true;
 		}
 
-		return mkdir( $path, self::$CHMOD_DIR, true );
+		return mkdir( $path, kthumb_opt()->CHMOD_DIR, true );
 	}
 
 }

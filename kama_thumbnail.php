@@ -11,90 +11,79 @@
  * Plugin URI: https://wp-kama.ru/142
  * Author URI: https://wp-kama.ru/
  *
- * Requires PHP: 7.2
+ * Requires PHP: 7.1
  * Requires at least: 4.7
  *
- * Version: 3.4.2
+ * Version: 3.5.0
  */
 
-$ktdata = (object) get_file_data( __FILE__, [
+defined( 'ABSPATH' ) || exit;
+
+$ktdata = get_file_data( __FILE__, [
 	'ver'       => 'Version',
 	'req_php'   => 'Requires PHP',
 	'plug_name' => 'Plugin Name',
 ] );
 
-// check is php compatible
-if( ! version_compare( phpversion(), $ktdata->req_php, '>=' ) ){
+define( 'KTHUMB_DIR', realpath( wp_normalize_path( __DIR__ ) ) );
+define( 'KTHUMB_VER', $ktdata['ver'] );
 
-	$message = sprintf( '%s requires PHP %s+, but current one is %s.',
-		$ktdata->plug_name,
-		$ktdata->req_php,
-		phpversion()
-	);
+// load files
 
-	if( defined( 'WP_CLI' ) ){
-		WP_CLI::error( $message );
+spl_autoload_register( static function( $class ){
+
+	if( false !== strpos( $class, 'Kama_Thumbnail\\' ) ){
+		$relpath = explode( '\\', $class, 2 )[1];
+		require KTHUMB_DIR . "/classes/{$relpath}.php";
 	}
-	else {
-		add_action( 'admin_notices', static function() use ( $message ){
-			echo '<div id="message" class="notice notice-error"><p>' . $message . '</p></div>';
-		} );
-	}
+} );
 
+require_once KTHUMB_DIR . '/functions.php';
+
+if( ! _kama_thumb_check_php_version( $ktdata ) ){
 	return;
 }
 
-define( 'KTHUMB_VER', $ktdata->ver );
 unset( $ktdata );
 
-define( 'KTHUMB_DIR', wp_normalize_path( __DIR__ ) );
-
-// as plugin
+// Set KTHUMB_URL constant
+// in plugin
 if(
-	false !== strpos( KTHUMB_DIR, wp_normalize_path( WP_PLUGIN_DIR ) )
+	false !== strpos( KTHUMB_DIR, realpath( wp_normalize_path( WP_PLUGIN_DIR ) ) )
 	||
-	false !== strpos( KTHUMB_DIR, wp_normalize_path( WPMU_PLUGIN_DIR ) )
+	false !== strpos( KTHUMB_DIR, realpath( wp_normalize_path( WPMU_PLUGIN_DIR ) ) )
 ){
 	define( 'KTHUMB_URL', plugins_url( '', __FILE__ ) );
 }
 // in theme
 else {
-	define( 'KTHUMB_URL', strtr( KTHUMB_DIR, [ wp_normalize_path( get_template_directory() ) => get_template_directory_uri() ] ) );
+	define( 'KTHUMB_URL', str_replace(
+		realpath( wp_normalize_path( get_stylesheet_directory() ) ),
+		get_stylesheet_directory_uri(),
+		KTHUMB_DIR
+	) );
 }
 
 
-// load files
+/**
+ * INIT
+ */
 
-spl_autoload_register( static function( $name ){
-
-	if( false !== strpos( $name, 'Kama_Make_Thumb' ) || false !== strpos( $name, 'Kama_Thumbnail' ) ){
-
-		require KTHUMB_DIR . "/classes/$name.php";
-	}
-} );
-
-require KTHUMB_DIR . '/functions.php';
-
-
-// stop if this file loads from uninstall.php file
+// Don't INIT if loads from uninstall.php
 if( defined( 'WP_UNINSTALL_PLUGIN' ) ){
 	return;
 }
 
 
-// init
-
 if( defined( 'WP_CLI' ) ){
 
-	WP_CLI::add_command( 'kthumb', 'Kama_Thumbnail_CLI_Command', [
+	WP_CLI::add_command( 'kthumb', \Kama_Thumbnail\CLI_Command::class, [
 		'shortdesc' => 'Kama Thumbnail Plugin CLI Commands',
 	] );
 }
 
 
-/**
- * Initialize the plugin later, so that we can use some hooks from the theme.
- */
+// Initialize later to allow use hooks from theme.
 add_action( 'init', 'kama_thumbnail_init' );
 
 function kama_thumbnail_init(){

@@ -1,6 +1,8 @@
 <?php
 
-class Kama_Thumbnail_Options_Page {
+namespace Kama_Thumbnail;
+
+class Options_Page {
 
 	/** @var string */
 	private static $opt_page_key;
@@ -177,7 +179,7 @@ class Kama_Thumbnail_Options_Page {
 
 	public function _options_field_html(): void {
 
-		$opt = new Kama_Thumbnail_Options();
+		$opt = new Options();
 		$opt_name = $opt->opt_name;
 
 		$def_opt = (object) $opt->get_default_options();
@@ -191,11 +193,11 @@ class Kama_Thumbnail_Options_Page {
 
 			'cache_dir_url' =>
 				'<input type="text" name="'. $opt_name .'[cache_dir_url]" value="'. esc_attr( $opt->cache_dir_url ) .'" style="width:80%;" placeholder="'. esc_attr( kthumb_opt()->cache_dir_url ) .'">
-				<p class="description">'. __('URL of cache folder.','kama-thumbnail') .'</p>',
+				<p class="description">'. __('URL of cache folder.','kama-thumbnail') .' '. __('Must contain substring: cache or thumb.','kama-thumbnail') .'</p>',
 
 			'no_photo_url' =>
 				'<input type="text" name="'. $opt_name .'[no_photo_url]" value="'. esc_attr( $opt->no_photo_url ) .'" style="width:80%;" placeholder="'. esc_attr( kthumb_opt()->no_photo_url ) .'">
-				<p class="description">'. __('URL of stub image.','kama-thumbnail') .'</p>',
+				<p class="description">'. __('URL of stub image.','kama-thumbnail') .' '. __('Or WP attachment ID.','kama-thumbnail') .'</p>',
 
 			'meta_key' =>
 				'<input type="text" name="'. $opt_name .'[meta_key]" value="'. esc_attr( $opt->meta_key ) .'" class="regular-text">

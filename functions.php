@@ -1,11 +1,21 @@
 <?php
 
+use Kama_Thumbnail\Cache;
+use Kama_Thumbnail\Plugin;
+use Kama_Thumbnail\Options;
+use Kama_Thumbnail\Make_Thumb;
+
 /**
- * Use following code instead of same-named functions where you want to show thumbnail:
+ * Use following code instead of same-named functions where you want to show thumbnails:
  *
+ *     ```php
  *     echo apply_filters( 'kama_thumb_src',   '', $args, $src );
  *     echo apply_filters( 'kama_thumb_img',   '', $args, $src );
  *     echo apply_filters( 'kama_thumb_a_img', '', $args, $src );
+ *     ```
+ *
+ * NOTE: The first empty parameter is needed so that if we remove the plugin,
+ * the hook will return an empty string, not what is defined in $args.
  */
 add_filter( 'kama_thumb_src',   'kama_thumb_hook_cb', 0, 3 );
 add_filter( 'kama_thumb_img',   'kama_thumb_hook_cb', 0, 3 );
@@ -52,89 +62,102 @@ function kama_thumb_hook_cb( $foo, $args = [], $src = 'notset' ){
 /**
  * Make thumbnail and gets it URL.
  *
- * @param array  $args
- * @param string $src
- *
- * @return string
+ * @param array|string $args
+ * @param string|int   $src  Image URL or attachment ID.
  */
-function kama_thumb_src( $args = [], $src = 'notset' ){
+function kama_thumb_src( $args = [], $src = 'notset' ): string {
 
-	return ( new Kama_Make_Thumb( $args, $src ) )->src();
+	return ( new Make_Thumb( $args, $src ) )->src();
 }
 
 /**
  * Make thumbnail and gets it IMG tag.
  *
- * @param array  $args
- * @param string $src
- *
- * @return string
+ * @param array|string $args
+ * @param string|int   $src  Image URL or attachment ID.
  */
-function kama_thumb_img( $args = [], $src = 'notset' ){
+function kama_thumb_img( $args = [], $src = 'notset' ): string {
 
-	return ( new Kama_Make_Thumb( $args, $src ) )->img();
+	return ( new Make_Thumb( $args, $src ) )->img();
 }
 
 /**
  * Make thumbnail and gets it IMG tag wrapped with A tag.
  *
- * @param array  $args
- * @param string $src
- *
- * @return mixed|string|void
+ * @param array|string $args
+ * @param string|int   $src  Image URL or attachment ID.
  */
-function kama_thumb_a_img( $args = [], $src = 'notset' ){
+function kama_thumb_a_img( $args = [], $src = 'notset' ): string {
 
-	return ( new Kama_Make_Thumb( $args, $src ) )->a_img();
+	return ( new Make_Thumb( $args, $src ) )->a_img();
 }
 
 /**
- * Reference to the last Kama_Make_Thumb instance to read some properties: height, width, or other...
+ * Reference to the last Make_Thumb instance to read some properties: height, width, or other...
  *
- * @param string $deprecated
+ * @param string $deprecated Make_Thumb Property name.
  *
- * @return mixed|Kama_Make_Thumb|null The value of specified property or
- *                                    `Kama_Make_Thumb` object if no property is specified.
+ * @return Make_Thumb `Make_Thumb` object. Deprecated: the value of specified property of the object.
  */
 function kama_thumb( $deprecated = '' ) {
 
-	$instance = Kama_Make_Thumb::$last_instance;
+	$instance = Make_Thumb::$last_instance;
 
 	if( $deprecated ){
 		_deprecated_argument( __FUNCTION__, '3.4.12', '`$optname` parameter is deprecated use returned object properties instead.' );
+
+		if( property_exists( $instance, $deprecated ) ){
+			return $instance->$deprecated;
+		}
+
+		return null;
 	}
 
-	if( ! $deprecated ){
-		return $instance;
-	}
-
-	if( property_exists( $instance, $deprecated ) ){
-		return $instance->$deprecated;
-	}
-
-	return null;
+	return $instance;
 }
 
 /**
- * Gets instance of Kama_Thumbnail class.
- *
- * @return Kama_Thumbnail
+ * Gets instance of the Plugin main class.
  */
-function kama_thumbnail(){
-	return Kama_Thumbnail::instance();
+function kama_thumbnail(): Plugin {
+	return Plugin::instance();
 }
 
 /**
- * @return Kama_Thumbnail_Options
+ * Gets instance of the Plugin options object.
  */
-function kthumb_opt(){
-	return Kama_Thumbnail::$opt;
+function kthumb_opt(): Options {
+	return Plugin::$opt;
 }
 
 /**
- * @return Kama_Thumbnail_Cache
+ * Gets instance of the Plugin cache object.
  */
-function kthumb_cache(){
-	return Kama_Thumbnail::$cache;
+function kthumb_cache(): Cache {
+	return Plugin::$cache;
 }
 
+
+function _kama_thumb_check_php_version( array $data ): bool {
+
+	if( version_compare( PHP_VERSION, $data['req_php'], '>=' ) ){
+		return true;
+	}
+
+	$message = sprintf( '%s requires PHP %s+, but current one is %s.',
+		$data['plug_name'],
+		$data['req_php'],
+		PHP_VERSION
+	);
+
+	if( defined( 'WP_CLI' ) ){
+		\WP_CLI::error( $message );
+	}
+	else {
+		add_action( 'admin_notices', static function() use ( $message ){
+			echo '<div id="message" class="notice notice-error"><p>' . $message . '</p></div>';
+		} );
+	}
+
+	return false;
+}

@@ -1,6 +1,6 @@
 === Plugin Name ===
 Stable tag:   trunk
-Tested up to: 6.1
+Tested up to: 6.1.1
 
 License:      GPLv2 or later
 License URI:  http://www.gnu.org/licenses/gpl-2.0.html
@@ -310,6 +310,21 @@ If you are themes developer, and need all it functionality, but you need to inst
 
 
 == Changelog ==
+
+= 3.5.0 =
+- CHG: !IMPORTANT All core classes moved under `Kama_Thumbnail` namespace. So if you use such classes as `Kama_Thumbnail` or `Kama_Make_Thumb` directly - You need to update your code to use namespase. Example: `Kama_Thumbnail_Helpers::parse_main_dom()` >>> `\Kama_Thumbnail\Helpers::parse_main_dom()` OR `new Kama_Make_Thumb()` >>> `new \Kama_Thumbnail\Make_Thumb()`.
+- CHG: CHMOD Options moved: `Kama_Make_Thumb::$CHMOD_DIR` >>> `kthumb_opt()->CHMOD_DIR` and `Kama_Make_Thumb::$CHMOD_FILE` >>> `kthumb_opt()->CHMOD_FILE`
+- NEW: `$src` parameter now understand Attachment ID|Attachment Object|WP_Post.
+- NEW: `no_photo_url` option now supports attachment ID as a value.
+- NEW: Delete cached thumbnails of deleted attachment.
+- IMP: Unit test improvements.
+- IMP: `src` value moved to `srcset` and `src` now contains the original URL.
+- IMP: `decoding="async"` by default for kama_thumb_img().
+- IMP: Checks the cache_dir path before deleting all files. This is to avoid accidentally deleting files in another directory. Now cache folder must contain one of substring `cache` or `thumb`.
+- BUG: Type hint in get_src_from_text() method.
+- BUG: `kama_thumb__img_attrs` hook support `srcset` attribute bugfix.
+- BUG: stub need to be created when url with not allowed domain was passed. But the stub was created in the path of the normal image.
+- BUG: Bug fix with symbolic links in WP_PLUGIN_DIR|WPMU_PLUGIN_DIR paths.
 
 = 3.4.2 =
 - NEW: Option to delete single IMG cache by image/thumb URL or attachment ID.
