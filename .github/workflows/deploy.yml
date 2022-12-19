@@ -1,0 +1,21 @@
+name: Deploy to WordPress.org
+
+on:
+  push:
+    tags:
+      - "*"
+jobs:
+  wporg_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Deploy to WordPress.org
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        with:
+          generate-zip: true
+        env:
+          SLUG: kama-thumbnail
+          SVN_USERNAME: ${{ secrets.WPORG_SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.WPORG_SVN_PASSWORD }}
