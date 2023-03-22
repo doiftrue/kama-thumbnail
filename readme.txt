@@ -311,6 +311,11 @@ If you are themes developer, and need all it functionality, but you need to inst
 
 == Changelog ==
 
+= 3.5.1 =
+- CHG: Options Page Moved from Media page to separate page.
+- CHG: Minor improvements.
+- IMP: Note if `ini_get( 'max_execution_time' ) === 0`.
+
 = 3.5.0 =
 - CHG: !IMPORTANT All core classes moved under `Kama_Thumbnail` namespace. So if you use such classes as `Kama_Thumbnail` or `Kama_Make_Thumb` directly - You need to update your code to use namespase. Example: `Kama_Thumbnail_Helpers::parse_main_dom()` >>> `\Kama_Thumbnail\Helpers::parse_main_dom()` OR `new Kama_Make_Thumb()` >>> `new \Kama_Thumbnail\Make_Thumb()`.
 - CHG: CHMOD Options moved: `Kama_Make_Thumb::$CHMOD_DIR` >>> `kthumb_opt()->CHMOD_DIR` and `Kama_Make_Thumb::$CHMOD_FILE` >>> `kthumb_opt()->CHMOD_FILE`

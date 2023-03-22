@@ -17,22 +17,29 @@ class Options_Page {
 			return;
 		}
 
-		self::$opt_page_key = is_multisite() ? 'kama_thumb' : 'media';
+		self::$opt_page_key = 'kama_thumb';
 
 		add_action( 'wp_ajax_ktclearcache', [ $this, 'cache_clear_ajax_handler' ] );
 
 		if( ! defined( 'DOING_AJAX' ) ){
 
-			add_action( ( is_multisite() ? 'network_admin_menu' : 'admin_menu' ), [ $this, '_register_settings' ] );
+			add_action( ( is_multisite() ? 'network_admin_menu' : 'admin_menu' ), [ $this, 'add_options_page' ] );
 
 			// ссылка на настойки со страницы плагинов
-			add_filter( 'plugin_action_links', [ $this, '_setting_page_link' ], 10, 2 );
+			add_filter( 'plugin_action_links', [ $this, 'add_setting_page_in_plugin_links' ], 10, 2 );
 
 			// обновления опций
 			if( is_multisite() ){
-				add_action( 'network_admin_edit_' . 'kt_opt_up', [ $this, '_network_options_update_handler' ] );
+				add_action( 'network_admin_edit_kt_opt_up', [ $this, '_network_options_update_handler' ] );
 			}
 		}
+	}
+
+	public static function get_options_page_url(){
+
+		return is_multisite()
+			? network_admin_url( 'settings.php?page='. self::$opt_page_key  )
+			: admin_url( 'options-general.php?page=' . self::$opt_page_key );
 	}
 
 	public function cache_clear_ajax_handler(): void {
@@ -65,19 +72,6 @@ class Options_Page {
 
 	}
 
-	public function _network_options_page_html(): void {
-		?>
-		<form method="POST" action="edit.php?action=kt_opt_up" style="max-width:900px;">
-			<?php
-			// NOTE: settings_fields() is not suitable for a multisite...
-			wp_nonce_field( self::$opt_page_key );
-			do_settings_sections( self::$opt_page_key );
-			submit_button();
-			?>
-		</form>
-		<?php
-	}
-
 	public function _network_options_update_handler(): void {
 
 		check_admin_referer( self::$opt_page_key ); // nonce check
@@ -86,50 +80,96 @@ class Options_Page {
 
 		kthumb_opt()->update_options( $new_opts );
 
-		$settings_url = network_admin_url( 'settings.php?page='. self::$opt_page_key  );
-		wp_redirect( add_query_arg( 'updated', 'true', $settings_url ) );
+		wp_redirect( add_query_arg( 'updated', 'true', self::get_options_page_url() ) );
 		exit();
 	}
 
-	public function _register_settings(): void {
+	public function add_options_page(): void {
 
-		if( ! is_multisite() ){
+		if( is_multisite() ){
+			$parent_slug = 'settings.php'; // a separate page for multisite
+			$capability = 'manage_network_options';
+		}
+		else {
+			$parent_slug = 'options-general.php';
+			$capability = 'manage_options';
+
 			register_setting( self::$opt_page_key, kthumb_opt()->opt_name, [ kthumb_opt(), 'sanitize_options' ] );
 		}
 
-		// for the multisite, a separate page is created in the network settings
-		if( is_multisite() ){
+		$hook = add_submenu_page(
+			$parent_slug, // `null` to hide page
+			__( 'Kama Thumbnail Settings', 'kama-thumbnail' ),
+			'Kama Thumbnail',
+			$capability,
+			self::$opt_page_key,
+			[ $this, '_options_page_html' ]
+		);
 
-			$hook = add_submenu_page(
-				'settings.php',
-				'Kama Thumbnail',
-				'Kama Thumbnail',
-				'manage_network_options',
-				self::$opt_page_key,
-				[ $this, '_network_options_page_html' ]
-			);
+		if( ! $hook ){
+			return;
 		}
 
-		$section = 'kama_thumbnail_section';
+		add_action( "admin_print_scripts-$hook", static function(){
+			self::styles();
+		} );
+
+		$section_name = 'kama_thumbnail_section';
 
 		add_settings_section(
-			$section,
-			__( 'Kama Thumbnail Settings', 'kama-thumbnail' ),
-			'',
+			$section_name,
+			null, // title
+			null, // callback
 			self::$opt_page_key
 		);
 
 		add_settings_field(
 			'kt_options_field',
-			$this->buttons_html(),
-			[ $this, '_options_field_html' ],
+			self::buttons_html(),
+			[ $this, 'options_fields_html' ],
 			self::$opt_page_key,
-			$section // section
+			$section_name // section
+		);
+
+		// Link to settings page from `options-media.php` page
+
+		add_settings_section(
+			$section_name,
+			'Kama Thumbnail',
+			static function(){
+				echo sprintf( 'Moved to <a href="%s">settings page</a>.', self::get_options_page_url() );
+			},
+			'media'
 		);
 
 	}
 
-	private function buttons_html(){
+	public function _options_page_html(): void {
+
+		$action_url = is_multisite() ? 'edit.php?action=kt_opt_up' : 'options.php';
+		?>
+		<div class="wrap">
+			<h1><?= get_admin_page_title() ?></h1>
+
+			<form method="POST" action="<?= $action_url ?>" style="max-width: 1100px;">
+				<?php
+				// NOTE: settings_fields() is not suitable for a multisite...
+				if( is_multisite() ){
+					wp_nonce_field( self::$opt_page_key );
+				}
+				else {
+					settings_fields( self::$opt_page_key );
+				}
+
+				do_settings_sections( self::$opt_page_key );
+				submit_button();
+				?>
+			</form>
+		</div>
+		<?php
+	}
+
+	private static function buttons_html(){
 		ob_start();
 		?>
 		<script>
@@ -177,134 +217,57 @@ class Options_Page {
 		return ob_get_clean();
 	}
 
-	public function _options_field_html(): void {
-
-		$opt = new Options();
-		$opt_name = $opt->opt_name;
-
-		$def_opt = (object) $opt->get_default_options();
-
-		$elems = [
-			'_delete_img_cache' => $this->clear_img_cache_field_html(),
-
-			'cache_dir' =>
-				'<input type="text" name="'. $opt_name .'[cache_dir]" value="'. esc_attr( $opt->cache_dir ) .'" style="width:80%;" placeholder="'. esc_attr( kthumb_opt()->cache_dir ) .'">'.
-				'<p class="description">'. __('Full path to the cache folder with 755 rights or above.','kama-thumbnail') .'</p>',
-
-			'cache_dir_url' =>
-				'<input type="text" name="'. $opt_name .'[cache_dir_url]" value="'. esc_attr( $opt->cache_dir_url ) .'" style="width:80%;" placeholder="'. esc_attr( kthumb_opt()->cache_dir_url ) .'">
-				<p class="description">'. __('URL of cache folder.','kama-thumbnail') .' '. __('Must contain substring: cache or thumb.','kama-thumbnail') .'</p>',
-
-			'no_photo_url' =>
-				'<input type="text" name="'. $opt_name .'[no_photo_url]" value="'. esc_attr( $opt->no_photo_url ) .'" style="width:80%;" placeholder="'. esc_attr( kthumb_opt()->no_photo_url ) .'">
-				<p class="description">'. __('URL of stub image.','kama-thumbnail') .' '. __('Or WP attachment ID.','kama-thumbnail') .'</p>',
-
-			'meta_key' =>
-				'<input type="text" name="'. $opt_name .'[meta_key]" value="'. esc_attr( $opt->meta_key ) .'" class="regular-text">
-				<p class="description">'. __('Custom field key, where the thumb URL will be. Default:','kama-thumbnail') .' <code>'. esc_html( $def_opt->meta_key ) .'</code></p>',
-
-			'allow_hosts' =>
-				'<textarea name="'. $opt_name .'[allow_hosts]" style="width:350px;height:45px;">'. esc_textarea( implode( "\n", $opt->allow_hosts ) ) .'</textarea>
-				<p class="description"><code>allow</code> '. __('Hosts from which thumbs can be created. One per line: <i>sub.mysite.com</i>. Specify <code>any</code>, to use any hosts.','kama-thumbnail') .'</p>',
-
-			'quality' =>
-				'<code>quality</code> <input type="number" name="'. $opt_name .'[quality]" value="'. esc_attr( $opt->quality ) .'" style="width:60px;">
-				<p class="description" style="display:inline-block;">'. __('Quality of creating thumbs from 0 to 100. Default:','kama-thumbnail') .' <code>'. $def_opt->quality .'</code></p>',
-
-			'no_stub' => '
-				<label>
-					<input type="hidden" name="'. $opt_name .'[no_stub]" value="0">
-					<input type="checkbox" name="'. $opt_name .'[no_stub]" value="1" '. checked( 1, @ $opt->no_stub, 0 ) .'>
-					<code>no_stub</code> '. __('Don\'t show nophoto image.','kama-thumbnail') .'
-				</label>',
-
-			'rise_small' => '
-				<label>
-					<input type="hidden" name="'. $opt_name .'[rise_small]" value="0">
-					<input type="checkbox" name="'. $opt_name .'[rise_small]" value="1" '. checked( 1, @ $opt->rise_small, 0 ) .'>
-					<code>rise_small=true</code> — '. __('Increase the thumbnail you create (width/height) if it is smaller than the specified size.','kama-thumbnail') .'
-				</label>',
-
-			'use_in_content' => '
-				<input type="text" name="'. $opt_name .'[use_in_content]" value="'.( isset( $opt->use_in_content ) ? esc_attr( $opt->use_in_content ) : 'mini' ).'">
-				<p class="description">'.
-                    __( 'Find specified here class of IMG tag in content and make thumb from found image by it`s sizes.', 'kama-thumbnail' ) .
-                    ' ' .
-                    __( 'Leave this field empty to disable this function.', 'kama-thumbnail' ) .
-                    '<br>' .
-                    __( 'You can specify several classes, separated by comma or space: mini, size-large.', 'kama-thumbnail' ) .
-                    '<br>' .
-                    sprintf( __( 'Default: %s', 'kama-thumbnail' ), '<code>mini</code>' ) .
-                '</p>',
-
-			'auto_clear' => '
-				<label>
-					<input type="hidden" name="'. $opt_name .'[auto_clear]" value="0">
-					<input type="checkbox" name="'. $opt_name .'[auto_clear]" value="1" '. checked( 1, @ $opt->auto_clear, 0 ) .'>
-					'. sprintf(
-					__('Clear all cache automaticaly every %s days.','kama-thumbnail'),
-					'<input type="number" name="'. $opt_name .'[auto_clear_days]" value="'. @ $opt->auto_clear_days .'" style="width:50px;">'
-				) .'
-				</label>',
-
-			'stop_creation_sec' => '
-				<input type="number" step="0.5" name="'. $opt_name .'[stop_creation_sec]" value="'.( isset($opt->stop_creation_sec) ? esc_attr($opt->stop_creation_sec) : 20 ).'" style="width:4rem;"> '. __('seconds','kama-thumbnail') .'
-				<p class="description" style="display:inline-block;">'. sprintf( __('The maximum number of seconds since PHP started, after which thumbnails creation will be stopped. Must be less then %s (current PHP `max_execution_time`).','kama-thumbnail'), ini_get('max_execution_time') ) .'</p>',
-
-		];
-
-		$elems = apply_filters( 'kama_thumb__options_field_elems', $elems, $opt_name, $opt, $def_opt );
-
-		$elems['debug'] = '
-			<label>
-				<input type="hidden" name="'. $opt_name .'[debug]" value="0">
-				<input type="checkbox" name="'. $opt_name .'[debug]" value="1" '. checked( 1, @ $opt->debug, 0 ) .'>
-				'. __('Debug mode. Recreates thumbs all time (disables the cache).','kama-thumbnail') .'
-			</label>';
-
-		?>
-		<style>
-			.ktumb-line{ padding-bottom:1.5em; }
-		</style>
-		<?php
-		foreach( $elems as $elem ){
-			?>
-			<div class="ktumb-line"><?= $elem ?></div>
-			<?php
-		}
-
-	}
-
-	private function clear_img_cache_field_html(){
-		ob_start();
-		?>
-		<div>
-			<button type="button" class="button" onclick="window.ktclearcache( 'rm_img_cache', this.nextElementSibling.value )"><?= __( 'Clear IMG cache', 'kama-thumbnail' ) ?></button>
-			<input type="text" value="" style="width:71%;" placeholder="<?= __( 'Image/Thumb URL or attachment ID', 'kama-thumbnail' ) ?>">
-		</div>
-		<p class="description">
-			<?= __( 'Clears all chached files of single IMG. The URL format can be any of:', 'kama-thumbnail' ) ?>
-			<code>http://dom/path.jpg</code>
-			<code>https://dom/path.jpg</code>
-			<code>//dom/path.jpg</code>
-			<code>/path.jpg</code>
-		</p>
-		<?php
-		return ob_get_clean();
-	}
-
-	public function _setting_page_link( $actions, $plugin_file ){
+	/** @private */
+	public function add_setting_page_in_plugin_links( $actions, $plugin_file ){
 
 		if( false === strpos( $plugin_file, basename( KTHUMB_DIR ) ) ){
 			return $actions;
 		}
 
-		$settings_link = sprintf( '<a href="%s">%s</a>', admin_url( 'options-media.php' ), __( 'Settings', 'kama-thumbnail' ) );
+		$settings_link = sprintf( '<a href="%s">%s</a>', self::get_options_page_url(), __( 'Settings', 'kama-thumbnail' ) );
 		array_unshift( $actions, $settings_link );
 
 		return $actions;
 	}
 
+	public function options_fields_html(): void {
+
+		$options = new Options();
+		$fields = new Options_Page_Fields( $options );
+
+		$elems = [
+			'_delete_img_cache' => $fields->delete_img_cache(),
+			'cache_dir'         => $fields->cache_dir(),
+			'cache_dir_url'     => $fields->cache_dir_url(),
+			'no_photo_url'      => $fields->no_photo_url(),
+			'meta_key'          => $fields->meta_key(),
+			'allow_hosts'       => $fields->allow_hosts(),
+			'quality'           => $fields->quality(),
+			'no_stub'           => $fields->no_stub(),
+			'rise_small'        => $fields->rise_small(),
+			'use_in_content'    => $fields->use_in_content(),
+			'auto_clear'        => $fields->auto_clear(),
+			'stop_creation_sec' => $fields->stop_creation_sec(),
+		];
+
+		$elems = apply_filters( 'kama_thumb__options_field_elems', $elems, $options );
+
+		$elems['debug'] = $fields->debug(); // at bottom
+
+		foreach( $elems as $elem ){
+			?>
+			<div class="ktumb-line"><?= $elem ?></div>
+			<?php
+		}
+	}
+
+	protected static function styles(): void {
+		?>
+		<style>
+			.ktumb-line{ padding-bottom: 1.5em; }
+		</style>
+		<?php
+	}
 }
 
 

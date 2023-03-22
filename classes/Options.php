@@ -284,11 +284,9 @@ class Options {
 	 */
 	public function sanitize_options( array $opts ): array {
 
-		$defopt = (object) $this->get_default_options();
-
 		foreach( $opts as $key => & $val ){
 
-			if( $key === 'allow_hosts' ){
+			if( 'allow_hosts' === $key ){
 				$ah = wp_parse_list( $val );
 
 				foreach( $ah as & $host ){
@@ -299,21 +297,25 @@ class Options {
 
 				$val = array_unique( $ah );
 			}
-			elseif( $key === 'meta_key' && ! $val ){
-
-				$val = $defopt->meta_key;
+			elseif( 'meta_key' === $key ){
+				$val = sanitize_text_field( $val ?: self::$default_options['meta_key'] );
 			}
-			elseif( $key === 'cache_dir' && $val ){
-				$res = kthumb_cache()->check_cache_dir_path( $val );
-				if( is_wp_error( $res ) ){
-					$val = '';
+			elseif( 'cache_dir' === $key ){
+				if( $val ){
+					$res = kthumb_cache()->check_cache_dir_path( $val );
+					if( is_wp_error( $res ) ){
+						$val = '';
+					}
 				}
 			}
-			elseif( $key === 'stop_creation_sec' ){
+			elseif( 'stop_creation_sec' === $key ){
+				$val = (float) ( $val ?: self::$default_options['stop_creation_sec'] );
 
-				$maxallowed = ini_get( 'max_execution_time' ) * 0.95; // -5%
-				$val = (float) $val;
-				$val = ( $val > $maxallowed || ! $val ) ? $maxallowed : $val;
+				// NOTE: `max_execution_time` may be set to 0 - no limit. No restrict in this case.
+				$allowed_sec = ini_get( 'max_execution_time' ) * 0.95; // -5%
+				if( $allowed_sec && $val > $allowed_sec ){
+					$val = $allowed_sec;
+				}
 			}
 			else {
 				$val = sanitize_text_field( $val );

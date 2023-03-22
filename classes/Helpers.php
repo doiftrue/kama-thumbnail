@@ -14,6 +14,8 @@ class Helpers {
 	 */
 	public static function parse_main_dom( string $host ): string {
 
+		$host = rtrim( $host, '/' );
+
 		// URL passed OR port is specified (dom.site.ru:8080 > dom.site.ru) (59.120.54.215:8080 > 59.120.54.215)
 		if( preg_match( '~/|:\d{2}~', $host ) ){
 			$host = parse_url( $host, PHP_URL_HOST );
